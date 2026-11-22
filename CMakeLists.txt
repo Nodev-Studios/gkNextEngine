@@ -32,6 +32,11 @@ if(WIN32 AND ENABLE_STREAMLINE)
     set(WITH_STREAMLINE ON)
 endif()
 
+# DLSS on Linux talks to the NGX SDK directly (Streamline is Windows-only). The SDK is a
+# download, so the feature follows its presence instead of failing the configure:
+# `gnb deps fetch dlss` (part of `gnb setup` on Linux) puts it under external/.
+option(ENABLE_DLSS_NGX "Enable NVIDIA DLSS through the NGX SDK on Linux x86_64" ON)
+
 if (WIN32)
     set(ENABLE_FIDELITYFX_DEFAULT ON)
 else()

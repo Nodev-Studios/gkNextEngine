@@ -192,6 +192,16 @@ if(TARGET NextStreamline AND WITH_STREAMLINE)
     target_link_directories(NextStreamline PRIVATE ${STREAMLINE_LIB_DIR})
 endif()
 
+if(TARGET NextStreamline AND WITH_DLSS_NGX)
+    # Linux: the same module drives DLSS through the NGX SDK instead of Streamline.
+    # libnvsdk_ngx.a is the loader stub; the models are the .so files copied next to the
+    # executables, and the NGX core itself comes from the installed NVIDIA driver.
+    target_compile_definitions(NextStreamline PRIVATE WITH_DLSS_NGX=1)
+    target_include_directories(NextStreamline SYSTEM PRIVATE ${DLSS_NGX_INCLUDE_DIR})
+    target_link_libraries(NextStreamline PRIVATE "${DLSS_NGX_STATIC_LIB}" ${CMAKE_DL_LIBS})
+    file(COPY ${DLSS_NGX_RUNTIME_LIBS} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+endif()
+
 if(TARGET NextFidelityFX)
     target_compile_definitions(NextFidelityFX PRIVATE
         WITH_FIDELITYFX=$<BOOL:${WITH_FIDELITYFX}>

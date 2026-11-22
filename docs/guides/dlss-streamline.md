@@ -4,12 +4,14 @@ category: guide
 status: 现行
 owner: NextStreamline
 created: 2026-06-18
-last_updated: 2026-11-03
+last_updated: 2026-11-22
 ---
 
 # NVIDIA Streamline / DLSS / DLSS-G 指南
 
-gkNextEngine 只在 Windows x86_64 上集成 NVIDIA Streamline。非 Windows 构建会编译相同的 renderer 路径，但 Streamline 处于禁用状态。
+gkNextEngine 在 Windows x86_64 上通过 NVIDIA Streamline 集成 DLSS。Streamline 没有 Linux 版本，
+Linux x86_64 上同一个 `NextStreamline` 模块改为直接调用 NGX SDK，提供 DLSS-SR 与 DLSS-RR，见下文
+[Linux：通过 NGX 直接集成](#linux通过-ngx-直接集成)。其余平台编译相同的 renderer 路径，但 DLSS 处于禁用状态。
 
 ## SDK 版本与模型预设
 
@@ -98,6 +100,70 @@ resources 与 persistent tag；重新激活后由首帧 evaluate 按需创建。
 
 engine 状态为 `Loading` 时不会启用 DLSS-G。这可以避免 `slDLSSGSetOptions` 与场景加载期间的 swapchain 替换发生竞争。
 
+## Linux：通过 NGX 直接集成
+
+Linux 上没有 Streamline，`NextStreamline` 模块里的 `NgxIntegration.cpp` 直接面向 NGX SDK
+（[NVIDIA/DLSS](https://github.com/NVIDIA/DLSS)）实现同一个 `IUpscaler` 接口。运行时 CVar、质量档位、
+模型预设（SR：K / M / L，RR：F）与上文完全一致，引擎核心不区分两条路径。
+
+| 功能 | Windows（Streamline） | Linux（NGX） |
+|---|---|---|
+| DLSS Super Resolution（`r.upscaler.type 1`） | ✅ | ✅ |
+| DLSS Ray Reconstruction（`r.upscaler.type 2`） | ✅ | ✅ |
+| DLSS-G Frame Generation | ✅ | ❌ |
+| Reflex / PCL | ✅ | ❌ |
+
+Frame Generation、Reflex 和 PCL 依赖 Streamline 的 present 代理层，NGX 本身不提供，因此 Linux 上
+`r.frameGeneration` 不生效。
+
+### SDK 与构建
+
+- 版本同样两处锁定：`gnb.toml` 的 `[external.dlss]` 与 `cmake/SetupExternalLibs.cmake` 的
+  `GK_DLSS_NGX_VERSION`（当前 **310.9.16**）。
+- `gnb deps fetch dlss`（Linux 上的 `gnb setup` 会一并执行）把头文件、`libnvsdk_ngx.a` 以及
+  `libnvidia-ngx-dlss.so.*` / `libnvidia-ngx-dlssd.so.*` 逐个文件下载到 `external/dlss-<version>/`，约 100 MB。
+  SDK 唯一的整包归档带着全部平台，体积是它的数倍，所以不走归档。
+- CMake 按 SDK 是否存在决定 `WITH_DLSS_NGX`：缺失时只打印提示并照常构建（没有 DLSS），不会让配置失败。
+  取回 SDK 后执行 `gnb build --reconfigure`，配置阶段会把两个模型库拷到输出目录。
+  `-DENABLE_DLSS_NGX=OFF` 可显式关闭。
+- 运行时需要 NVIDIA 专有驱动：NGX 核心（`libnvidia-ngx.so`）来自驱动，随引擎分发的只有模型库。
+  没有加载 NVIDIA 内核模块、或选中的不是 NVIDIA 显卡时，provider 不安装，日志会说明原因。
+- `--disable-streamline` 在 Linux 上同样关闭这条路径。
+
+### 预期启动日志
+
+```text
+DLSS provider installed through NGX (Super Resolution, Ray Reconstruction)
+NGX Vulkan device ready. DLSS=true, RR=true
+DLSS active for PathTracing: 960x540 -> 1920x1080
+NGX DLSS feature created: 960x540 -> 1920x1080 (HDR input)
+```
+
+### 实现上的约束
+
+- **Vulkan 扩展用 `NVSDK_NGX_VULKAN_RequiredExtensions` 查询，不用按 feature 的 discovery API。**
+  `NVSDK_NGX_VULKAN_GetFeatureRequirements` 与两个 `GetFeature*ExtensionRequirements` 会在
+  `NVSDK_NGX_VULKAN_Init` 之前加载 feature 库；当目录里同时有 SR 与 RR 两个库（驱动还自带一份 RR）时，
+  NGX 核心随后会把 SR 的槽位绑到 RR 库上——创建 DLSS feature 成功，evaluate 却在
+  `libnvidia-ngx-dlssd` 里崩溃。feature 是否可用改在 Init 之后通过 capability parameters 查询。
+- **SR 与 RR 共用一个 parameter block。** 创建 RR 会在其中留下 `DLSS.Denoise.Mode = DLUnified`，而 SR 库
+  创建时会读取该参数，所以创建 SR 时显式写回 `Off`。
+- NGX 采样输入、以 storage 方式写输出，provider 在 evaluate 前后自行做 layout 转换并还原，
+  renderer 侧不需要为 DLSS 额外插 barrier。
+
+### 验证
+
+`gnb shot` / `gnb validate` 带 `--agent-validation`，会把 DLSS 换成 Native TAAU，无法证明 DLSS 生效。
+Linux 上隐藏窗口可以正常跑 DLSS，用下面的命令即可（不弹窗，跑完自动退出）：
+
+```bash
+out/build/linux/bin/gkNextRenderer --load-scene=assets/models/playground.glb --hidden-window \
+    --cvar "r.upscaler.type 1" --exit-after-frames 300
+```
+
+确认日志出现上面的 `NGX ... feature created`，且没有 `NGX ... evaluation failed`。注意已归档的用户设置
+（`~/.local/share/gkNext/<app>/assets/configs/cvar_user.json`）里若已有同名 CVar，会覆盖 `--cvar`。
+
 ## 故障排查
 
 - 如果 `r.frameGeneration 1` 没有增加 presented frames，检查 renderer settings 面板中的 DLSS-G state 行。非零 status mask 表示 Streamline runtime 拒绝了当前状态。
@@ -105,6 +171,8 @@ engine 状态为 `Loading` 时不会启用 DLSS-G。这可以避免 `slDLSSGSetO
 - 不要用 `--agent-validation` 或 `--hidden-window` 验证 Streamline。Agent validation 为确定性
   会禁用 Streamline；`gnb shot` 只能验证进入 DLSS 前的 scene color/depth/motion 资源链。
   DLSS-SR/RR/DLSS-G 必须使用正常可见窗口验证。
+- Linux 上日志出现 `DLSS unavailable through NGX` 时，先看是否提示驱动需要更新；出现
+  `DLSS disabled because device extension ... is unavailable` 说明驱动缺少 NGX 需要的 Vulkan 扩展。
 - 如果启动日志显示请求的 Vulkan extension 不可用，该 adapter 的 DLSS 功能会被禁用，renderer 会回退到普通 resolve。
 - 如果启用了 HDR 但 DLSS-G 拒绝运行，强制使用 SDR，或切换到 10-bit HDR swapchain format。
 - 如果 validation 报告 swapchain layout 问题，确认 resolve 路径在 DLSS/blit 前调用 `SwapChain::InsertBarrierToWrite`，并在 present 前调用 `InsertBarrierToPresent`。

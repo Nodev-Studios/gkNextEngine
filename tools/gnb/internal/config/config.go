@@ -35,6 +35,7 @@ type VcpkgConfig struct {
 
 type ExternalConfig struct {
 	Streamline StreamlineConfig  `toml:"streamline"`
+	DLSS       DLSSConfig        `toml:"dlss"`
 	FidelityFX FidelityFXConfig  `toml:"fidelityfx"`
 	VulkanSDK  VulkanSDKConfig   `toml:"vulkansdk"`
 	LLM        LLMConfig         `toml:"llm"`
@@ -64,6 +65,16 @@ type FidelityFXConfig struct {
 type StreamlineConfig struct {
 	ExternalURLConfig
 	Version string `toml:"version"`
+}
+
+// DLSSConfig pins the NVIDIA DLSS (NGX) SDK used on Linux, where Streamline does not exist.
+// BaseURL is the root of the SDK tree for one version ("{version}" is substituted); the
+// headers and Linux libraries are fetched from it file by file, because the SDK's only
+// archive also carries every other platform and is several times larger.
+type DLSSConfig struct {
+	When    string `toml:"when"`
+	Version string `toml:"version"`
+	BaseURL string `toml:"base_url"`
 }
 
 type LLMConfig struct {

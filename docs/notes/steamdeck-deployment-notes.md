@@ -27,7 +27,7 @@ Steam Deck 桌面模式按 Linux x86_64 路径构建。旧记录中某次 LDraw 
 
 - 需要可用的 Vulkan driver；Steam Deck 通常走 Mesa RADV。用 `vulkaninfo` 和应用启动日志确认实际 GPU/driver，不凭旧机器记录推断。
 - Linux gnb 不构建 Wails 原生窗口，裸 `gnb`/`gnb dashboard` 会打开浏览器；`gnb dashboard --no-open` 是 server-only 模式。
-- Windows-only Streamline/DLSS 在 Linux 关闭。不要把其缺失误判为构建损坏。
+- Streamline 仅限 Windows；Linux 上的 DLSS 走 NGX，且只在 NVIDIA 显卡上启用。Steam Deck 是 AMD 硬件，日志里 DLSS 被跳过属于预期，不要误判为构建损坏。
 - Remote Play 还要求 driver 暴露 Vulkan Video H.264 encode；不支持时目前没有软件 fallback。
 - 游戏模式的只读文件系统、Flatpak 权限或外接存储挂载可能影响写入；开发和首次 setup 建议在桌面模式、可写 checkout 中完成。
 

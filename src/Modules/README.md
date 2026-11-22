@@ -28,7 +28,7 @@ Android 平台模块源直接并入单一 SHARED target；`NextTui` 仅桌面 + 
 | NextValidation | `gnb shot/validate` loopback 控制、查询与 SDL 合成输入 |
 | NextNet | 游戏联机传输（ENet，仅桌面）：服务器/客户端、可靠与不可靠通道、消息缓冲、链路模拟与流量统计、HTTP JSON 工作线程 |
 | NextRemote | Remote Play：视频编码、WebRTC、远程输入 |
-| NextStreamline | DLSS / Streamline 集成（仅 Windows） |
+| NextStreamline | DLSS 集成：Windows 走 Streamline（含帧生成 / Reflex），Linux 直接走 NGX SDK（仅 DLSS-SR / DLSS-RR） |
 | NextFidelityFX | FidelityFX FSR 3.1 upscale / Frame Generation Vulkan 集成（仅 Windows） |
 | NextTemporalUpscaler | Native TAAU + Snapdragon GSR 2 2-pass compute（全 Vulkan 平台，见 `AGENT_GUIDE/NativeTemporalUpscaler.md`） |
 | NextTui | 终端 TUI 渲染模式 |

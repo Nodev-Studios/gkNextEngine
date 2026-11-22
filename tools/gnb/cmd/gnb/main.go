@@ -348,7 +348,7 @@ func newDepsCommand(ctx appContext) *cobra.Command {
 	}
 
 	fetch := &cobra.Command{
-		Use:   "fetch [all|vulkan|streamline|fidelityfx]",
+		Use:   "fetch [all|vulkan|streamline|fidelityfx|dlss]",
 		Short: tr("cli.deps.fetch.short"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return fetcher.EnsureNamedExternal(ctx.repoRoot, ctx.cfg, args)
