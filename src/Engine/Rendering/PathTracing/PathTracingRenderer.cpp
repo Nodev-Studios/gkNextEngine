@@ -66,6 +66,8 @@ namespace Vulkan::PathTracing
         sharcQueryPipeline_.reset();
         restirSpatialPipeline_.reset();
         samplePostChain_.DeleteSwapChain();
+        // The swapchain is torn down with the device idle, so nothing can still read these.
+        retiredSharc_.clear();
     }
 
     void PathTracingRenderer::WarmupPipelines()
@@ -101,13 +103,29 @@ namespace Vulkan::PathTracing
         }
     }
 
+    void PathTracingRenderer::RetireSharcResources()
+    {
+        if (sharc_.hashEntries.buffer || sharc_.lockBuffer.buffer || sharc_.accumulation.buffer
+            || sharc_.resolved.buffer || sharc_.parameters.buffer)
+        {
+            retiredSharc_.push_back({std::move(sharc_), baseRender_.RecordingSubmitSerial()});
+        }
+        sharc_ = {};
+    }
+
     void PathTracingRenderer::EnsureSharcResources()
     {
+        const uint64_t completedSerial = baseRender_.CompletedSubmitSerial();
+        std::erase_if(retiredSharc_, [completedSerial](const FRetiredSharc& retired)
+        {
+            return retired.releaseAfterSubmitSerial <= completedSerial;
+        });
+
         const Assets::Scene* activeScene = &GetScene();
         const uint64_t sceneGeneration = baseRender_.SceneGeneration();
         if (sharc_.ownerScene != activeScene || sharc_.ownerSceneGeneration != sceneGeneration)
         {
-            sharc_ = {};
+            RetireSharcResources();
             sharc_.ownerScene = activeScene;
             sharc_.ownerSceneGeneration = sceneGeneration;
         }
@@ -121,7 +139,7 @@ namespace Vulkan::PathTracing
 
         const Assets::Scene* ownerScene = sharc_.ownerScene;
         const uint64_t ownerSceneGeneration = sharc_.ownerSceneGeneration;
-        sharc_ = {};
+        RetireSharcResources();
         sharc_.ownerScene = ownerScene;
         sharc_.ownerSceneGeneration = ownerSceneGeneration;
         sharc_.entriesPow2 = entriesPow2;

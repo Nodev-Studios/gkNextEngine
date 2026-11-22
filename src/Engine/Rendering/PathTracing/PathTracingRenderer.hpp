@@ -65,6 +65,15 @@ namespace Vulkan::PathTracing
         PipelineCommon::SamplePostChain samplePostChain_;
 
         FSharcState sharc_;
+        // A superseded SHARC set: commands recorded earlier this frame (another view, another
+        // scene) or still on the GPU reach it by device address, so it lives until that submit
+        // serial has completed.
+        struct FRetiredSharc
+        {
+            FSharcState state;
+            uint64_t releaseAfterSubmitSerial = 0;
+        };
+        std::vector<FRetiredSharc> retiredSharc_;
         // FTracingExtras table shared by SHARC and ReSTIR, reached via GPUScene.ReservedAddress0.
         // Content is view-invariant (fixed device addresses) so per-Render() rewrites cannot race
         // across views; per-view gating happens shader-side via the recorded push constant.
@@ -73,6 +82,7 @@ namespace Vulkan::PathTracing
 
         void EnsureSharcPipelines();
         void EnsureSharcResources();
+        void RetireSharcResources();
         void UpdateSharcParameters();
         void ClearSharcResources(VkCommandBuffer commandBuffer);
         void InsertSharcBarrier(VkCommandBuffer commandBuffer, VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask) const;

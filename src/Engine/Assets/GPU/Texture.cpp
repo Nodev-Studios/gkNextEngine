@@ -228,6 +228,7 @@ namespace Assets
 
     GlobalTexturePool::~GlobalTexturePool()
     {
+        retiredTextureImages_.clear();
         defaultWhiteTexture_.reset();
         textureImages_.clear();
         descriptorSetManager_.reset();
@@ -780,6 +781,8 @@ namespace Assets
     void GlobalTexturePool::TickHDRTextureResidency(
         uint32_t activeTextureIdx, bool hasSky, uint32_t frameIndex, bool streamingEnabled)
     {
+        ReleaseRetiredTextureImages();
+
         if (!streamingEnabled)
         {
             for (uint32_t textureIdx = 0; textureIdx < hdrTextureResidency_.size(); ++textureIdx)
@@ -851,74 +854,84 @@ namespace Assets
             Utilities::Package::FPackageFileSystem::GetInstance().LoadFile(textureName, *sourceData);
         }
 
+        // The worker only decodes and uploads through the transfer pool, whose queue it reaches
+        // under the pool's lock. Everything that touches state the render thread uses -- the
+        // texture slot, the bindless descriptor, the SH table -- happens in the completion on the
+        // main thread, and the superseded image is retired rather than destroyed: frames already
+        // submitted still sample it through the old descriptor.
+        struct FHDRResidencyUpload
+        {
+            std::unique_ptr<TextureImage> Image;
+            SphericalHarmonics SH {};
+            std::string Info;
+        };
+        auto upload = std::make_shared<FHDRResidencyUpload>();
+
         auto textureResidencyTask =
-            [this, textureIdx, textureName, targetResidency, sourceData](Tasks::ResTask& task)
+            [textureName, targetResidency, sourceData, upload, this](Tasks::ResTask&)
             {
-                TextureTaskContext taskContext {};
                 const auto timer = std::chrono::high_resolution_clock::now();
 
                 const uint8_t* data = sourceData->empty() ? nullptr : sourceData->data();
                 const FHDRTexturePayload payload = LoadHDRTexturePayload(textureName, data, sourceData->size());
-                auto textureImage = CreateHDRTextureImage(commandPool_, payload, targetResidency);
-                if (!textureImage)
+                upload->Image = CreateHDRTextureImage(commandPool_, payload, targetResidency);
+                if (!upload->Image)
+                {
+                    return;
+                }
+                upload->Image->SetDebugName(fmt::format("Texture {}", textureName));
+                upload->SH = payload.SH;
+
+                const float elapsed = std::chrono::duration<float, std::chrono::seconds::period>(
+                    std::chrono::high_resolution_clock::now() - timer).count();
+                upload->Info = fmt::format(
+                    "[HDRTextureResidency] {} -> {} in {:.2f}ms",
+                    textureName, HDRResidencyName(targetResidency), elapsed * 1000.f);
+            };
+
+        auto textureResidencyCompleteTask = [this, textureIdx, textureName, targetResidency, upload](Tasks::ResTask&)
+            {
+                pendingTextureLoads_.fetch_sub(1, std::memory_order_release);
+                if (textureIdx >= hdrTextureResidency_.size())
+                {
+                    return;
+                }
+                auto& residency = hdrTextureResidency_[textureIdx];
+                residency.Pending = false;
+
+                if (!upload->Image)
                 {
                     // The source went missing between load and streaming; keep whatever
                     // image is currently bound instead of unbinding the slot.
                     SPDLOG_WARN("HDR texture '{}' could not be re-created for residency change; keeping current image.",
                                 textureName);
-                    if (textureIdx < hdrTextureResidency_.size())
-                    {
-                        hdrTextureResidency_[textureIdx].Pending = false;
-                    }
                     return;
                 }
-                textureImage->SetDebugName(fmt::format("Texture {}", textureName));
-
-                device_.WaitIdle();
-                textureImages_[textureIdx] = std::move(textureImage);
-                hdrSphericalHarmonics_[textureIdx] = payload.SH;
-
-                taskContext.textureId = static_cast<int32_t>(textureIdx);
-                taskContext.needFlushHDRSH = true;
-                taskContext.hdrResidency = static_cast<uint8_t>(targetResidency);
-                taskContext.elapsed = std::chrono::duration<float, std::chrono::seconds::period>(
-                    std::chrono::high_resolution_clock::now() - timer).count();
-                const std::string info = fmt::format(
-                    "[HDRTextureResidency] {} -> {} in {:.2f}ms",
-                    textureName, HDRResidencyName(targetResidency), taskContext.elapsed * 1000.f);
-                std::copy(info.begin(), info.end(), taskContext.outputInfo.data());
-                task.SetContext(taskContext);
-            };
-
-        auto textureResidencyCompleteTask = [this](Tasks::ResTask& task)
-            {
-                TextureTaskContext taskContext {};
-                task.GetContext(taskContext);
-                const uint32_t textureIdx = static_cast<uint32_t>(taskContext.textureId);
-                if (textureIdx < textureImages_.size() && textureImages_[textureIdx])
+                if (textureIdx >= textureImages_.size() || !textureImages_[textureIdx])
                 {
-                    textureImages_[textureIdx]->MainThreadPostLoading(mainThreadCommandPool_);
-                    BindTexture(textureIdx, *textureImages_[textureIdx]);
+                    // The slot was released while the worker ran; installing the image would
+                    // resurrect a texture nothing owns any more.
+                    return;
                 }
 
-                if (textureIdx < hdrTextureResidency_.size())
+                upload->Image->MainThreadPostLoading(mainThreadCommandPool_);
+                RetireTextureImage(std::move(textureImages_[textureIdx]));
+                textureImages_[textureIdx] = std::move(upload->Image);
+                BindTexture(textureIdx, *textureImages_[textureIdx]);
+                hdrSphericalHarmonics_[textureIdx] = upload->SH;
+
+                residency.Current = targetResidency;
+                residency.Target = residency.Current;
+                if (residency.Current == EHDRTextureResidency::LowestMip)
                 {
-                    auto& residency = hdrTextureResidency_[textureIdx];
-                    residency.Current = static_cast<EHDRTextureResidency>(taskContext.hdrResidency);
-                    residency.Target = residency.Current;
-                    residency.Pending = false;
-                    if (residency.Current == EHDRTextureResidency::LowestMip)
-                    {
-                        residency.DemandFrames = 0;
-                    }
+                    residency.DemandFrames = 0;
                 }
 
-                SPDLOG_INFO("{}", taskContext.outputInfo.data());
-                if (GlobalTexturePool::GetInstance()->hdrShUpdatedCallback_)
+                SPDLOG_INFO("{}", upload->Info);
+                if (hdrShUpdatedCallback_)
                 {
-                    GlobalTexturePool::GetInstance()->hdrShUpdatedCallback_();
+                    hdrShUpdatedCallback_();
                 }
-                pendingTextureLoads_.fetch_sub(1, std::memory_order_release);
             };
 
         pendingTextureLoads_.fetch_add(1, std::memory_order_relaxed);
@@ -936,10 +949,37 @@ namespace Assets
         }
     }
 
+    void GlobalTexturePool::RetireTextureImage(std::unique_ptr<TextureImage> image)
+    {
+        if (!image)
+        {
+            return;
+        }
+        // Without a serial source nothing can tell when the GPU is done with the image, so it
+        // waits for FreeTransientTextures or teardown, which idle the device first.
+        const uint64_t releaseAfter = recordingSubmitSerial_ ? recordingSubmitSerial_() + 1u
+                                                             : std::numeric_limits<uint64_t>::max();
+        retiredTextureImages_.push_back({std::move(image), releaseAfter});
+    }
+
+    void GlobalTexturePool::ReleaseRetiredTextureImages()
+    {
+        if (retiredTextureImages_.empty() || !completedSubmitSerial_)
+        {
+            return;
+        }
+        const uint64_t completed = completedSubmitSerial_();
+        std::erase_if(retiredTextureImages_, [completed](const FRetiredTextureImage& retired)
+        {
+            return retired.ReleaseAfterSubmitSerial <= completed;
+        });
+    }
+
     void GlobalTexturePool::FreeTransientTextures()
     {
         // make sure the binded image not in use
         device_.WaitIdle();
+        retiredTextureImages_.clear();
         
         for (auto& textureGroup : textureNameMap_)
         {
