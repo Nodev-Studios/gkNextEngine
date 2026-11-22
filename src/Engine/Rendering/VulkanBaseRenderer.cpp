@@ -649,6 +649,9 @@ namespace Vulkan
         ctx_.globalTexturePool.reset(new Assets::GlobalTexturePool(
             *ctx_.device, *ctx_.commandPool2, *ctx_.commandPool, caps_.bindlessProfile,
             caps_.supportsBCTextures));
+        ctx_.globalTexturePool->SetSubmitSerialSource(
+            [this] { return RecordingSubmitSerial(); },
+            [this] { return CompletedSubmitSerial(); });
 
         // The compatibility profile renders no scene, so the subsystems that only exist to feed one
         // are dropped here instead of being guarded at each of their use sites. Both are held in

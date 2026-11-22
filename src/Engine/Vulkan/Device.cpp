@@ -436,6 +436,7 @@ MemoryStatsSnapshot Device::CaptureMemoryStats(bool includeDetails) const
 
 void Device::WaitIdle() const
 {
+    std::lock_guard<std::mutex> queueLock(queueSubmitMutex_);
     Check(Interposer().DeviceWaitIdle(device_),
         "wait for device idle");
 }

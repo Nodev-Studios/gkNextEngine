@@ -4,6 +4,7 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "Engine/Vulkan/DebugUtilities.hpp"
@@ -57,6 +58,11 @@ namespace Vulkan
         MemoryStatsSnapshot CaptureMemoryStats(bool includeDetails = false) const;
 
         void WaitIdle() const;
+        // vkDeviceWaitIdle needs external synchronization on every queue of the device, but texture
+        // workers submit to the transfer queue while the main thread idles the device (scene load,
+        // texture release). Single-time submits hold this around vkQueueSubmit and WaitIdle holds it
+        // for the wait, so the two never overlap.
+        std::mutex& QueueSubmitMutex() const { return queueSubmitMutex_; }
 
         // The cache is shared by every graphics and compute pipeline created for this logical
         // device. It is populated from the per-user cache directory during device creation and
@@ -98,6 +104,7 @@ namespace Vulkan
         VkPhysicalDeviceProperties deviceProp_;
         VkPipelineCache pipelineCache_ = VK_NULL_HANDLE;
         mutable std::atomic<uint32_t> pipelineCreationCount_ = 0;
+        mutable std::mutex queueSubmitMutex_;
         bool bufferDeviceAddressEnabled_ = false;
     };
 

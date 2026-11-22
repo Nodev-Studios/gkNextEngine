@@ -193,10 +193,30 @@ namespace Assets
         // the SH-updated callback fires after an HDR texture (re)load.
         void SetHdrStreamingPolicy(std::function<bool()> policy) { hdrStreamingPolicy_ = std::move(policy); }
         void SetHdrShUpdatedCallback(std::function<void()> callback) { hdrShUpdatedCallback_ = std::move(callback); }
+        // The renderer's submit serials: the frame being (or last) recorded and the newest one the GPU
+        // has finished. An image swapped out of a bound slot is kept until the frames that could still
+        // sample it have completed, instead of idling the whole device.
+        void SetSubmitSerialSource(std::function<uint64_t()> recordingSerial, std::function<uint64_t()> completedSerial)
+        {
+            recordingSubmitSerial_ = std::move(recordingSerial);
+            completedSubmitSerial_ = std::move(completedSerial);
+        }
 
     private:
         std::function<bool()> hdrStreamingPolicy_;
         std::function<void()> hdrShUpdatedCallback_;
+        std::function<uint64_t()> recordingSubmitSerial_;
+        std::function<uint64_t()> completedSubmitSerial_;
+
+        struct FRetiredTextureImage
+        {
+            std::unique_ptr<TextureImage> Image;
+            uint64_t ReleaseAfterSubmitSerial = 0;
+        };
+        // Images replaced while frames in flight may still sample them. Main thread only.
+        std::vector<FRetiredTextureImage> retiredTextureImages_;
+        void RetireTextureImage(std::unique_ptr<TextureImage> image);
+        void ReleaseRetiredTextureImages();
 
         struct FHDRTextureResidencyState
         {

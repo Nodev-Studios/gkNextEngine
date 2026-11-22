@@ -111,8 +111,11 @@ void SingleTimeCommands::Submit(CommandPool& commandPool, const std::function<vo
 
     try
     {
-        Check(vkQueueSubmit(commandPool.Queue(), 1, &submitInfo, fence),
-            "submit single time command buffer");
+        {
+            std::lock_guard<std::mutex> queueLock(commandPool.Device().QueueSubmitMutex());
+            Check(vkQueueSubmit(commandPool.Queue(), 1, &submitInfo, fence),
+                "submit single time command buffer");
+        }
         Check(vkWaitForFences(commandPool.Device().Handle(), 1, &fence, VK_TRUE, UINT64_MAX),
             "wait single time command buffer");
     }
