@@ -6,47 +6,79 @@ import Shader.Bindless;
 import Shader.Types;
 import Shader.GpuScene;
 
-public bool IsOccludedVolume(float3 min, float3 max, float4x4 wvp)
+// Conservative occlusion test against the previous frame's depth (reverse-Z: larger is closer).
+// The box is reduced to its screen rectangle and the depth of its nearest corner, and it counts as
+// occluded only when every depth sampled across that rectangle is closer than that corner. Samples
+// are at most kOcclusionSampleStride pixels apart, so a gap at least that wide -- a doorway, a
+// window -- keeps whatever is seen through it. A rectangle that would need more than
+// kOcclusionMaxSamplesPerAxis samples on an axis is treated as visible: it is large on screen, so
+// culling it rarely pays, and a coarser grid would miss gaps again. Testing a 6^3 grid of points on
+// the box itself missed them: a wall seen only through a doorway had no grid point inside the
+// doorway and was culled on alternate frames as the projection jitter moved the points.
+public bool IsOccludedVolume(float3 boxMin, float3 boxMax, float4x4 wvp)
 {
-    const int GRID_SIZE = 6;
-    const float GRID_SIZE_MINUS_ONE = GRID_SIZE - 1;
+    const float kOcclusionSampleStride = 8.0f;
+    const uint kOcclusionMaxSamplesPerAxis = 24u;
 
-    uint2 screenSize = Bindless.GetViewStorageTextureDimensions<float>(Bindless.RT_PREV_DEPTHBUFFER);
-
-    for (int x = 0; x < GRID_SIZE; x++)
+    const uint2 screenSize = Bindless.GetViewStorageTextureDimensions<float>(Bindless.RT_PREV_DEPTHBUFFER);
+    if (any(screenSize == uint2(0u, 0u)))
     {
-        for (int y = 0; y < GRID_SIZE; y++)
+        return false;
+    }
+
+    float2 rectMin = float2(1e30f, 1e30f);
+    float2 rectMax = float2(-1e30f, -1e30f);
+    float nearestDepth = 0.0f;
+    for (uint i = 0; i < 8u; ++i)
+    {
+        const float3 corner = float3(
+            (i & 1u) != 0u ? boxMax.x : boxMin.x,
+            (i & 2u) != 0u ? boxMax.y : boxMin.y,
+            (i & 4u) != 0u ? boxMax.z : boxMin.z);
+        const float4 clipPos = mul(wvp, float4(corner, 1.0f));
+        if (clipPos.w <= 0.0f)
         {
-            for (int z = 0; z < GRID_SIZE; z++)
+            return false;
+        }
+        const float3 ndc = clipPos.xyz / clipPos.w;
+        if (ndc.z < 0.0f || ndc.z > 1.0f)
+        {
+            return false;
+        }
+        const float2 pixel = (ndc.xy * 0.5f + 0.5f) * float2(screenSize);
+        rectMin = min(rectMin, pixel);
+        rectMax = max(rectMax, pixel);
+        nearestDepth = max(nearestDepth, ndc.z);
+    }
+
+    // Only the on-screen part of the box can be seen; the frustum test already rejected boxes that
+    // are entirely off screen.
+    const float2 lastPixel = float2(screenSize) - 1.0f;
+    if (any(rectMax < 0.0f) || any(rectMin > lastPixel))
+    {
+        return false;
+    }
+    const int2 pixelMin = int2(clamp(rectMin, float2(0.0f, 0.0f), lastPixel));
+    const int2 pixelMax = int2(clamp(rectMax, float2(0.0f, 0.0f), lastPixel));
+    const float2 extent = float2(pixelMax - pixelMin);
+    const uint2 intervals = uint2(ceil(extent / kOcclusionSampleStride));
+    if (any(intervals + 1u > uint2(kOcclusionMaxSamplesPerAxis, kOcclusionMaxSamplesPerAxis)))
+    {
+        return false;
+    }
+
+    let previousDepth = Bindless.GetViewStorageTexture<float>(Bindless.RT_PREV_DEPTHBUFFER);
+    const float2 spacing = extent / float2(max(intervals, uint2(1u, 1u)));
+    const float visibleThreshold = nearestDepth + 0.00001f;
+    for (uint sx = 0; sx <= intervals.x; ++sx)
+    {
+        for (uint sy = 0; sy <= intervals.y; ++sy)
+        {
+            const int2 samplePixel = pixelMin + int2(round(spacing * float2(sx, sy)));
+            // A previous sample farther than the nearest corner means the box may show there.
+            if (previousDepth[min(samplePixel, pixelMax)] < visibleThreshold)
             {
-                float3 gridPoint = min + float3(
-                    (max.x - min.x) * (float(x) / GRID_SIZE_MINUS_ONE),
-                    (max.y - min.y) * (float(y) / GRID_SIZE_MINUS_ONE),
-                    (max.z - min.z) * (float(z) / GRID_SIZE_MINUS_ONE));
-
-                float4 clipPos = mul(wvp, float4(gridPoint, 1.0));
-                float3 ndc = clipPos.xyz / clipPos.w;
-                if (any(abs(ndc.xy) > 1.0) || ndc.z < 0.0 || ndc.z > 1.0)
-                {
-                    return false;
-                }
-
-                float2 screenUV = ndc.xy * 0.5 + 0.5;
-                int2 pixelCoord = int2(screenUV * float2(screenSize));
-                if (pixelCoord.x < 0 || pixelCoord.x >= screenSize.x ||
-                    pixelCoord.y < 0 || pixelCoord.y >= screenSize.y)
-                {
-                    return false;
-                }
-
-                float previousDepth = Bindless.GetViewStorageTexture<float>(Bindless.RT_PREV_DEPTHBUFFER)[pixelCoord];
-                // Reverse-Z: larger NDC depth is closer. A previous sample that is farther than
-                // this volume means the volume may be visible, so it must not be culled.
-                float currentDepth = ndc.z + 0.00001;
-                if (previousDepth < currentDepth)
-                {
-                    return false;
-                }
+                return false;
             }
         }
     }
