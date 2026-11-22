@@ -70,7 +70,8 @@ namespace Modules::NextDotNet
         bool DrawInlineProgress(ImVec2 size = ImVec2(0.0f, 0.0f));
 
         /// Draws a centered modal progress popup (e.g. for standalone Rebuild C# in Launcher or Editor).
-        /// Returns true when the build is finished and the modal is dismissed.
+        /// Returns true when the build is finished and the modal is dismissed; the outcome
+        /// (IsSuccess, GetErrorMessage) stays readable until the next StartBuild or Reset.
         bool DrawModalProgress(const char* popupId = "##ManagedBuildModal");
 
     private:
@@ -88,6 +89,7 @@ namespace Modules::NextDotNet
         std::string errorMessage_;
 
         bool modalOpenRequested_ = false;
+        bool modalDismissed_ = false;
         float successDismissTimer_ = -1.0f;
     };
 }

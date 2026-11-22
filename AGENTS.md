@@ -185,7 +185,7 @@ gnb validate --script assets/agentscripts/smoke.agentscript.json --visible  # �
 - 每次 `gnb validate` / `gnb shot` 都会登记到 `out/build/<preset>/validation_runs/<runId>/`，即使 Dashboard 没有启动也会保留 `run.json`、`script.json`、`runner.log` 和独立截图。CLI 会打印 runId 与证据目录；有截图的机器通过在 Dashboard 中仍显示为“待审阅”。可用 `gnb validation note <runId> --issue --message "…"` 记录视觉问题，审阅不会改写机器状态。
 - Agent 脚本鼠标移动只推送合成 `SDL_EVENT_MOUSE_MOTION`，不会 `SDL_WarpMouseInWindow` 移动系统光标；按键/鼠标按钮也只走 SDL 事件队列。
 - 支持步骤：`key` / `text` / `mouse-move` / `mouse-button` / `click` / `drag` / `scroll` / `wait-frames` / `wait-ms` / `wait-until` / `cvar` / `exec` / `assert` / `screenshot` / `log` / `quit`。
-- 内建查询：`engine.totalFrames`、`engine.frameRate`、`engine.time`、`engine.status`、`scene.ready`、`scene.nodeCount`、`scene.selectedId`、`scene.selectedCount`、`cvar.<name>`；游戏可通过 `RegisterAgentQueries` 暴露 `game.<name>`。
+- 内建查询：`engine.totalFrames`、`engine.frameRate`、`engine.time`、`engine.status`、`scene.ready`、`scene.nodeCount`、`scene.selectedId`、`scene.selectedCount`、`cvar.<name>`；游戏可通过 `RegisterAgentQueries` 暴露 `game.<name>`；C# 游戏用 `Agent.SetQuery("<name>", value)`（名字不带 `game.` 前缀，值是 double，宿主注册的同名查询优先，游戏卸载时清空）。
 - 结束会写 JSON report 到 `out/build/<preset>/agent_reports/<script-name>.json`；任一断言失败时进程返回非零退出码，CI 可直接判定失败。
 
 ## Linting

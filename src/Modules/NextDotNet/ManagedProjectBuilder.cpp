@@ -59,6 +59,7 @@ namespace Modules::NextDotNet
         startTime_ = std::chrono::steady_clock::now();
         state_.store(EManagedBuildState::Building, std::memory_order_release);
         modalOpenRequested_ = true;
+        modalDismissed_ = false;
         successDismissTimer_ = -1.0f;
 
         workerThread_ = std::thread([this, session, manifest = manifest_]() {
@@ -98,6 +99,7 @@ namespace Modules::NextDotNet
         errorMessage_.clear();
         finalElapsedSeconds_ = 0.0;
         modalOpenRequested_ = false;
+        modalDismissed_ = false;
         successDismissTimer_ = -1.0f;
     }
 
@@ -306,7 +308,7 @@ namespace Modules::NextDotNet
     bool FManagedProjectBuilder::DrawModalProgress(const char* popupId)
     {
         const EManagedBuildState s = state_.load(std::memory_order_acquire);
-        if (s == EManagedBuildState::Idle)
+        if (s == EManagedBuildState::Idle || modalDismissed_)
         {
             return false;
         }
@@ -348,7 +350,6 @@ namespace Modules::NextDotNet
                     if (successDismissTimer_ <= 0.0f)
                     {
                         ImGui::CloseCurrentPopup();
-                        Reset();
                         dismissed = true;
                     }
                 }
@@ -357,7 +358,6 @@ namespace Modules::NextDotNet
                 if (ImGui::Button(ICON_FA_CHECK "  Done", ImVec2(110.0f, 30.0f)))
                 {
                     ImGui::CloseCurrentPopup();
-                    Reset();
                     dismissed = true;
                 }
             }
@@ -367,7 +367,6 @@ namespace Modules::NextDotNet
                 if (ImGui::Button("Close", ImVec2(110.0f, 30.0f)))
                 {
                     ImGui::CloseCurrentPopup();
-                    Reset();
                     dismissed = true;
                 }
             }
@@ -381,6 +380,10 @@ namespace Modules::NextDotNet
             NextUI::Theme::EndModernModal();
         }
 
+        // Not Reset(): the caller reads IsSuccess() and the error right after this returns true,
+        // and Reset() would have turned a success into "rebuild failed: " with an empty message.
+        // The outcome stays readable until the next StartBuild.
+        modalDismissed_ = dismissed;
         return dismissed;
     }
 }

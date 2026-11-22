@@ -4,8 +4,22 @@
 namespace Runtime::Agent
 {
     void FAgentQueryRegistry::Add(std::string name, QueryFn fn) { if (!name.empty() && fn) queries_[std::move(name)] = std::move(fn); }
-    std::optional<FAgentQueryValue> FAgentQueryRegistry::Query(const std::string& name) const { const auto it = queries_.find(name); return it == queries_.end() ? std::nullopt : std::optional<FAgentQueryValue>(it->second()); }
-    std::vector<std::string> FAgentQueryRegistry::Names() const { std::vector<std::string> result; for (const auto& [name, fn] : queries_) result.push_back(name); std::sort(result.begin(), result.end()); return result; }
+    void FAgentQueryRegistry::SetValue(std::string name, double value) { if (!name.empty()) values_[std::move(name)] = value; }
+    void FAgentQueryRegistry::ClearValues() { values_.clear(); }
+    std::optional<FAgentQueryValue> FAgentQueryRegistry::Query(const std::string& name) const
+    {
+        if (const auto it = queries_.find(name); it != queries_.end()) return it->second();
+        if (const auto it = values_.find(name); it != values_.end()) return FAgentQueryValue(it->second);
+        return std::nullopt;
+    }
+    std::vector<std::string> FAgentQueryRegistry::Names() const
+    {
+        std::vector<std::string> result;
+        for (const auto& [name, fn] : queries_) result.push_back(name);
+        for (const auto& [name, value] : values_) if (!queries_.contains(name)) result.push_back(name);
+        std::sort(result.begin(), result.end());
+        return result;
+    }
     std::string ToString(const FAgentQueryValue& value)
     {
         if (const auto* item = std::get_if<bool>(&value)) return *item ? "true" : "false";

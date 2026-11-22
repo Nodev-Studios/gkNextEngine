@@ -333,6 +333,16 @@ namespace Modules::NextDotNet
 
         GkBool Engine_IsReplayMode() { return GOption != nullptr && GOption->FlappyReplay ? 1 : 0; }
 
+        // --- agent validation --------------------------------------------------------------------
+
+        void Agent_SetQuery(GkStr name, double value)
+        {
+            if (auto* engine = NextEngine::GetInstance())
+            {
+                engine->GetAgentQueries().SetValue(ToString(name), value);
+            }
+        }
+
         // --- input -------------------------------------------------------------------------------
 
         GkBool Input_IsKeyDown(GkStr name)
