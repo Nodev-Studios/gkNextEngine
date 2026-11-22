@@ -10,6 +10,7 @@
 #include "Engine/Assets/GPU/Texture.hpp"
 #include "Engine/Utilities/FileHelper.hpp"
 #include "Engine/Runtime/Components/EnvironmentComponent.hpp"
+#include "Engine/Runtime/Components/LightComponent.hpp"
 #include "Engine/Runtime/Components/RenderComponent.hpp"
 #include "Engine/Runtime/Components/SceneReferenceComponent.hpp"
 
@@ -32,6 +33,9 @@ namespace
 {
     struct FSceneSaverContext
     {
+        explicit FSceneSaverContext(const Scene& scene) : Source(scene) {}
+
+        const Scene& Source;
         tinygltf::Model Gltf;
         tinygltf::Buffer Buffer;
         std::unordered_map<uint32_t, int> MaterialIndexMap;
@@ -251,100 +255,117 @@ namespace
         return gltfTextureIndex;
     }
 
-    void SerializeMaterials(FSceneSaverContext& ctx, const Scene& scene)
+    // Materials are exported on demand, the first time an exported primitive asks for one. The
+    // scene's material list also holds every material a gkSceneReference proxy brought in; those
+    // belong to the referenced asset, are reloaded from it, and must not be baked into the host.
+    int ExportMaterial(FSceneSaverContext& ctx, uint32_t materialIdx)
     {
-        const auto& materials = scene.Materials();
-        for (uint32_t materialIdx = 0; materialIdx < materials.size(); ++materialIdx)
+        if (auto found = ctx.MaterialIndexMap.find(materialIdx); found != ctx.MaterialIndexMap.end())
         {
-            const FMaterial& material = materials[materialIdx];
-            const Material& gpuMat = material.gpuMaterial_;
-
-            tinygltf::Material gltfMat;
-            gltfMat.name = material.name_;
-
-            if (gpuMat.MaterialModel == Material::Enum::DiffuseLight)
-            {
-                const glm::vec3 emissive = glm::max(glm::vec3(gpuMat.Diffuse), glm::vec3(0.0f));
-                const float strength = std::max(1.0f, std::max(emissive.r, std::max(emissive.g, emissive.b)));
-                const glm::vec3 emissiveFactor = emissive / strength;
-                gltfMat.pbrMetallicRoughness.baseColorFactor = {1.0, 1.0, 1.0, gpuMat.Diffuse.a};
-                gltfMat.emissiveFactor = {emissiveFactor.r, emissiveFactor.g, emissiveFactor.b};
-                if (strength > 1.0f)
-                {
-                    gltfMat.extensions["KHR_materials_emissive_strength"] = tinygltf::Value(tinygltf::Value::Object{
-                        {"emissiveStrength", tinygltf::Value(static_cast<double>(strength / 50.0f))}
-                    });
-                    AddExtensionUsed(ctx.Gltf, "KHR_materials_emissive_strength");
-                }
-            }
-            else
-            {
-                gltfMat.pbrMetallicRoughness.baseColorFactor = {
-                    gpuMat.Diffuse.r * gpuMat.Diffuse.r,
-                    gpuMat.Diffuse.g * gpuMat.Diffuse.g,
-                    gpuMat.Diffuse.b * gpuMat.Diffuse.b,
-                    gpuMat.Diffuse.a
-                };
-            }
-
-            gltfMat.pbrMetallicRoughness.metallicFactor = gpuMat.Metalness;
-            gltfMat.pbrMetallicRoughness.roughnessFactor = gpuMat.Fuzziness;
-            gltfMat.pbrMetallicRoughness.baseColorTexture.index = ExportTexture(ctx, gpuMat.DiffuseTextureId);
-            gltfMat.pbrMetallicRoughness.metallicRoughnessTexture.index = ExportTexture(ctx, gpuMat.MRATextureId);
-            gltfMat.normalTexture.index = ExportTexture(ctx, gpuMat.NormalTextureId);
-            gltfMat.emissiveTexture.index = ExportTexture(ctx, gpuMat.EmissiveTextureId);
-            gltfMat.normalTexture.scale = gpuMat.NormalTextureScale;
-            if (gpuMat.Diffuse.a < 0.999f)
-            {
-                gltfMat.alphaMode = "BLEND";
-            }
-
-            if (std::abs(gpuMat.RefractionIndex - 1.46f) > 0.01f)
-            {
-                gltfMat.extensions["KHR_materials_ior"] = tinygltf::Value(tinygltf::Value::Object{
-                    {"ior", tinygltf::Value(static_cast<double>(gpuMat.RefractionIndex))}
-                });
-                AddExtensionUsed(ctx.Gltf, "KHR_materials_ior");
-            }
-
-            if (gpuMat.MaterialModel == Material::Enum::Dielectric)
-            {
-                gltfMat.extensions["KHR_materials_transmission"] = tinygltf::Value(tinygltf::Value::Object{
-                    {"transmissionFactor", tinygltf::Value(1.0)}
-                });
-                AddExtensionUsed(ctx.Gltf, "KHR_materials_transmission");
-            }
-
-            if (std::abs(gpuMat.RefractionIndex2 - gpuMat.RefractionIndex) > 0.001f)
-            {
-                gltfMat.extras = tinygltf::Value(tinygltf::Value::Object{
-                    {"ior2", tinygltf::Value(static_cast<double>(gpuMat.RefractionIndex2))}
-                });
-            }
-
-            ctx.Gltf.materials.push_back(gltfMat);
-            ctx.MaterialIndexMap[materialIdx] = static_cast<int>(ctx.Gltf.materials.size() - 1);
+            return found->second;
         }
 
-        if (ctx.Gltf.materials.empty())
+        const auto& materials = ctx.Source.Materials();
+        if (materialIdx >= materials.size())
         {
-            EnsureFallbackMaterial(ctx);
+            return EnsureFallbackMaterial(ctx);
         }
+
+        const FMaterial& material = materials[materialIdx];
+        const Material& gpuMat = material.gpuMaterial_;
+
+        tinygltf::Material gltfMat;
+        gltfMat.name = material.name_;
+
+        if (gpuMat.MaterialModel == Material::Enum::DiffuseLight)
+        {
+            const glm::vec3 emissive = glm::max(glm::vec3(gpuMat.Diffuse), glm::vec3(0.0f));
+            const float strength = std::max(1.0f, std::max(emissive.r, std::max(emissive.g, emissive.b)));
+            const glm::vec3 emissiveFactor = emissive / strength;
+            gltfMat.pbrMetallicRoughness.baseColorFactor = {1.0, 1.0, 1.0, gpuMat.Diffuse.a};
+            gltfMat.emissiveFactor = {emissiveFactor.r, emissiveFactor.g, emissiveFactor.b};
+            if (strength > 1.0f)
+            {
+                gltfMat.extensions["KHR_materials_emissive_strength"] = tinygltf::Value(tinygltf::Value::Object{
+                    {"emissiveStrength", tinygltf::Value(static_cast<double>(strength / 50.0f))}
+                });
+                AddExtensionUsed(ctx.Gltf, "KHR_materials_emissive_strength");
+            }
+        }
+        else
+        {
+            gltfMat.pbrMetallicRoughness.baseColorFactor = {
+                gpuMat.Diffuse.r * gpuMat.Diffuse.r,
+                gpuMat.Diffuse.g * gpuMat.Diffuse.g,
+                gpuMat.Diffuse.b * gpuMat.Diffuse.b,
+                gpuMat.Diffuse.a
+            };
+        }
+
+        gltfMat.pbrMetallicRoughness.metallicFactor = gpuMat.Metalness;
+        gltfMat.pbrMetallicRoughness.roughnessFactor = gpuMat.Fuzziness;
+        gltfMat.pbrMetallicRoughness.baseColorTexture.index = ExportTexture(ctx, gpuMat.DiffuseTextureId);
+        gltfMat.pbrMetallicRoughness.metallicRoughnessTexture.index = ExportTexture(ctx, gpuMat.MRATextureId);
+        gltfMat.normalTexture.index = ExportTexture(ctx, gpuMat.NormalTextureId);
+        gltfMat.emissiveTexture.index = ExportTexture(ctx, gpuMat.EmissiveTextureId);
+        gltfMat.normalTexture.scale = gpuMat.NormalTextureScale;
+        if (gpuMat.Diffuse.a < 0.999f)
+        {
+            gltfMat.alphaMode = "BLEND";
+        }
+
+        if (std::abs(gpuMat.RefractionIndex - 1.46f) > 0.01f)
+        {
+            gltfMat.extensions["KHR_materials_ior"] = tinygltf::Value(tinygltf::Value::Object{
+                {"ior", tinygltf::Value(static_cast<double>(gpuMat.RefractionIndex))}
+            });
+            AddExtensionUsed(ctx.Gltf, "KHR_materials_ior");
+        }
+
+        if (gpuMat.MaterialModel == Material::Enum::Dielectric)
+        {
+            gltfMat.extensions["KHR_materials_transmission"] = tinygltf::Value(tinygltf::Value::Object{
+                {"transmissionFactor", tinygltf::Value(1.0)}
+            });
+            AddExtensionUsed(ctx.Gltf, "KHR_materials_transmission");
+        }
+
+        if (std::abs(gpuMat.RefractionIndex2 - gpuMat.RefractionIndex) > 0.001f)
+        {
+            gltfMat.extras = tinygltf::Value(tinygltf::Value::Object{
+                {"ior2", tinygltf::Value(static_cast<double>(gpuMat.RefractionIndex2))}
+            });
+        }
+
+        ctx.Gltf.materials.push_back(gltfMat);
+        const int gltfMaterialIndex = static_cast<int>(ctx.Gltf.materials.size() - 1);
+        ctx.MaterialIndexMap[materialIdx] = gltfMaterialIndex;
+        return gltfMaterialIndex;
     }
 
     int GltfMaterialIndexForSection(FSceneSaverContext& ctx, const Runtime::RenderComponent* renderComp, uint32_t section)
     {
-        if (renderComp)
+        if (renderComp && !renderComp->GetMaterials().empty())
         {
             const auto& materials = renderComp->GetMaterials();
             const uint32_t materialIdx = section < materials.size() ? materials[section] : materials[0];
-            if (auto found = ctx.MaterialIndexMap.find(materialIdx); found != ctx.MaterialIndexMap.end())
-            {
-                return found->second;
-            }
+            return ExportMaterial(ctx, materialIdx);
         }
 
         return EnsureFallbackMaterial(ctx);
+    }
+
+    bool HasAreaLight(const Node& node)
+    {
+        const auto light = node.GetComponent<Runtime::LightComponent>();
+        if (!light)
+        {
+            return false;
+        }
+        return std::any_of(light->Lights().begin(), light->Lights().end(), [](const LightObject& item)
+        {
+            return item.lightType == LightTypeArea;
+        });
     }
 
     tinygltf::Value SerializeEnvironmentExtras(const EnvironmentSetting& env);
@@ -623,6 +644,12 @@ namespace
                 extras["visible"] = tinygltf::Value(renderComp->GetVisible());
                 extras["castShadows"] = tinygltf::Value(renderComp->GetCastShadows());
                 extras["receiveGI"] = tinygltf::Value(renderComp->GetReceiveGI());
+            }
+            // The loader rebuilds the LightComponent from the node's emissive quad, but only when
+            // the node says it is a light; without the marker a saved light comes back as a mesh.
+            if (!sceneReference && gltfNode.mesh >= 0 && HasAreaLight(*node))
+            {
+                extras["arealight"] = tinygltf::Value(true);
             }
             gltfNode.extras = tinygltf::Value(extras);
 
@@ -905,13 +932,12 @@ namespace
 
     bool SerializeSceneToGltf(tinygltf::Model& outModel, const Scene& scene)
     {
-        FSceneSaverContext ctx;
+        FSceneSaverContext ctx(scene);
         ctx.Gltf.asset.version = "2.0";
         ctx.Gltf.asset.generator = "gkNextRenderer Scene Saver";
         ctx.Buffer.name = "SceneBuffer";
 
         CollectRenderComponents(ctx, scene);
-        SerializeMaterials(ctx, scene);
         SerializeMeshes(ctx, scene);
         SerializeCameras(ctx, scene);
         SerializeNodes(ctx, scene);

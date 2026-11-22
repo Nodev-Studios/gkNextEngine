@@ -171,7 +171,7 @@ endif()
 
 # Appended last on purpose: the unity build batches files 8 at a time in list order, and inserting
 # into the middle reshuffles every later batch (two NextRaiden files then collide on a constant).
-list(APPEND unitTestSources Test_AgentQueries.cpp)
+list(APPEND unitTestSources Test_AgentQueries.cpp Test_SceneSaver.cpp)
 
 find_package(Catch2 3 REQUIRED)
 add_executable(gkNextUnitTests ${unitTestSources})
