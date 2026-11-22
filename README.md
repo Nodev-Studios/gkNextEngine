@@ -285,7 +285,7 @@ Windows 上若存在 `C:/Program Files/RenderDoc/renderdoc_app.h`，构建会自
 ./gnb.bat run gkNextRenderer
 ```
 
-除 Visual Studio 这类宿主工具外，其余项目依赖通常都由 `gnb` 自动准备；默认会拉取项目约定版本的 Vulkan SDK 与 Slang 到仓库内。`gnb` 在 Windows 上默认使用 **Ninja** 极速构建生成器（自动管理 MSVC 与 SDK 环境路径），Windows 默认启用 NVIDIA Streamline（DLSS）。
+除 Visual Studio 这类宿主工具外，其余项目依赖通常都由 `gnb` 自动准备；默认会拉取项目约定版本的 Vulkan SDK 与 Slang 到仓库内。`gnb` 在 Windows 上默认使用 **Ninja** 极速构建生成器（自动管理 MSVC 与 SDK 环境路径），Windows 默认启用 NVIDIA Streamline（DLSS）；Linux x86_64 在 NVIDIA 显卡上通过 NGX SDK 直接启用 DLSS / DLSS-RR（见 [DLSS 指南](docs/guides/dlss-streamline.md)）。
 
 </details>
 

@@ -78,7 +78,10 @@ because concurrent Windows builds can lock `.obj`, executables, or vcpkg state f
 
 **Optional Features:**
 - AVIF is manual: `cmake --preset windows -DENABLE_AVIF=ON -DVCPKG_MANIFEST_FEATURES=avif` then `./gnb.sh build`
-- DLSS/Streamline is always enabled on Windows and disabled elsewhere
+- DLSS: Windows always goes through Streamline (DLSS-SR / DLSS-RR / Frame Generation / Reflex);
+  Linux x86_64 talks to the NGX SDK directly (DLSS-SR / DLSS-RR only) when `gnb deps fetch dlss`
+  has put the SDK under `external/` — without it the build simply has no DLSS. Disabled elsewhere.
+  See `docs/guides/dlss-streamline.md`
 - OIDN and MinGW support have been removed
 
 **Build output:** `out/build/<platform>/bin/`
@@ -161,6 +164,9 @@ gnb shot --target AirportSim --ui  # 截图包含 ImGui，适合验证 HUD / 面
 - `gnb shot` 和 `gnb validate`（包括 `--visible`）都会传入 `--agent-validation`；该模式为了确定性会强制禁用 Streamline，因此只能验证送入 DLSS 前的 scene color / depth / motion 等资源链，**不能证明 DLSS 或 DLSS-RR 实际生效**。
 - 不要尝试用单独的 `--hidden-window` 绕过上述限制。普通 hidden SDL window 可能被识别为 minimized，swapchain 创建会等待窗口恢复，导致程序停在 DLSS evaluate 之前；这条路径不适合 Streamline/DLSS 验证。
 - 需要验证真实 DLSS 时，必须在 Windows NVIDIA 环境中使用**非 hidden、非 agent-validation**的正常窗口/present 路径。需要自动结束时可使用短时 `gkNextMotionBenchmark` 配置，但仍不能传 `--hidden-window`；运行会弹出窗口，AGENT 应先告知用户。
+- Linux 上 DLSS 走 NGX（没有 Streamline），hidden window 不存在上述 minimized 问题：用
+  `gkNextRenderer --hidden-window --cvar "r.upscaler.type 1" --exit-after-frames 300` 即可验证，日志应出现
+  `NGX DLSS feature created` 且没有 `NGX ... evaluation failed`。agent-validation 的限制在 Linux 上同样成立。
 - 验证时确认日志出现 `DLSS Super Resolution active for <renderer>` 或 `DLSS Ray Reconstruction active for PathTracing`，并检查没有 `slEvaluateFeature` / Streamline failure。普通 DLSS 应适用于 PathTracing、SoftwareTracing、SoftwareModern、SoftwareModernNoAmbient；DLSS-RR 只适用于 PathTracing。
 
 ### Agent Interactive Validation（输入驱动 + 断言）

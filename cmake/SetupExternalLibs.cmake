@@ -15,6 +15,34 @@ if(WITH_STREAMLINE)
     message(STATUS "Streamline Root: ${STREAMLINE_ROOT}")
 endif()
 
+# --- NVIDIA DLSS SDK (NGX, Linux) ---
+# Pinned like Streamline. Keep in sync with [external.dlss].version in gnb.toml.
+set(GK_DLSS_NGX_VERSION "310.9.16")
+set(WITH_DLSS_NGX OFF)
+if(ENABLE_DLSS_NGX AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+    set(DLSS_NGX_ROOT "${CMAKE_SOURCE_DIR}/external/dlss-${GK_DLSS_NGX_VERSION}")
+    set(DLSS_NGX_INCLUDE_DIR "${DLSS_NGX_ROOT}/include")
+    set(DLSS_NGX_STATIC_LIB "${DLSS_NGX_ROOT}/lib/Linux_x86_64/libnvsdk_ngx.a")
+    set(DLSS_NGX_RUNTIME_LIBS
+        "${DLSS_NGX_ROOT}/lib/Linux_x86_64/rel/libnvidia-ngx-dlss.so.${GK_DLSS_NGX_VERSION}"
+        "${DLSS_NGX_ROOT}/lib/Linux_x86_64/rel/libnvidia-ngx-dlssd.so.${GK_DLSS_NGX_VERSION}"
+    )
+    set(dlssNgxComplete ON)
+    foreach(dlssNgxFile "${DLSS_NGX_INCLUDE_DIR}/nvsdk_ngx_vk.h" "${DLSS_NGX_STATIC_LIB}" ${DLSS_NGX_RUNTIME_LIBS})
+        if(NOT EXISTS "${dlssNgxFile}")
+            set(dlssNgxComplete OFF)
+        endif()
+    endforeach()
+    if(dlssNgxComplete)
+        set(WITH_DLSS_NGX ON)
+        message(STATUS "DLSS SDK Root: ${DLSS_NGX_ROOT}")
+    else()
+        message(STATUS "DLSS SDK v${GK_DLSS_NGX_VERSION} not found under external/: building without DLSS. "
+                       "Run `gnb deps fetch dlss` (or `gnb setup`) and reconfigure to enable it.")
+    endif()
+endif()
+
 # --- AMD FidelityFX SDK (FSR 3.1 Vulkan) ---
 if(WITH_FIDELITYFX)
     set(FIDELITYFX_SDK_CONTAINER "${CMAKE_SOURCE_DIR}/external/fidelityfx-sdk-1.1.4")

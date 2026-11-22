@@ -102,3 +102,33 @@ func TestArchiveEntryPathAllowsRootAndRejectsTraversal(t *testing.T) {
 		}
 	}
 }
+
+func TestDLSSFilesCoverWhatCMakeRequires(t *testing.T) {
+	files := dlssFiles("1.2.3")
+	// The paths cmake/SetupExternalLibs.cmake checks before it enables WITH_DLSS_NGX.
+	for _, required := range []string{
+		"include/nvsdk_ngx_vk.h",
+		"lib/Linux_x86_64/libnvsdk_ngx.a",
+		"lib/Linux_x86_64/rel/libnvidia-ngx-dlss.so.1.2.3",
+		"lib/Linux_x86_64/rel/libnvidia-ngx-dlssd.so.1.2.3",
+	} {
+		found := false
+		for _, file := range files {
+			if file == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("dlssFiles is missing %s", required)
+		}
+	}
+}
+
+func TestDLSSFileURLSubstitutesVersion(t *testing.T) {
+	got := dlssFileURL("https://example.com/DLSS/v{version}/", "1.2.3", "include/nvsdk_ngx.h")
+	want := "https://example.com/DLSS/v1.2.3/include/nvsdk_ngx.h"
+	if got != want {
+		t.Fatalf("dlssFileURL = %q, want %q", got, want)
+	}
+}

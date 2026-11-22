@@ -289,7 +289,7 @@ The project uses CMake + Ninja, with dependencies managed through vcpkg. Beyond 
 ./gnb.bat run gkNextRenderer
 ```
 
-Beyond host tools such as Visual Studio, remaining project dependencies are handled by `gnb`; the default workflow pulls project-versioned Vulkan SDK and Slang directly into the workspace. On Windows, `gnb` uses **Ninja** as the generator (automatically discovering MSVC/SDK environments), with NVIDIA Streamline (DLSS) enabled by default.
+Beyond host tools such as Visual Studio, remaining project dependencies are handled by `gnb`; the default workflow pulls project-versioned Vulkan SDK and Slang directly into the workspace. On Windows, `gnb` uses **Ninja** as the generator (automatically discovering MSVC/SDK environments), with NVIDIA Streamline (DLSS) enabled by default. On Linux x86_64 with an NVIDIA GPU, DLSS and DLSS Ray Reconstruction are enabled through the NGX SDK directly (see the [DLSS guide](docs/guides/dlss-streamline.md)).
 
 </details>
 

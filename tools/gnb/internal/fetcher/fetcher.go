@@ -33,7 +33,7 @@ func EnsureExternal(repoRoot string, cfg config.Config) error {
 
 func EnsureNamedExternal(repoRoot string, cfg config.Config, names []string) error {
 	if len(names) == 0 {
-		names = []string{"vulkan", "streamline", "fidelityfx"}
+		names = []string{"vulkan", "streamline", "fidelityfx", "dlss"}
 	}
 
 	for _, name := range names {
@@ -68,11 +68,91 @@ func EnsureNamedExternal(repoRoot string, cfg config.Config, names []string) err
 					return err
 				}
 			}
+		case "dlss", "ngx":
+			if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
+				if err := ensureDLSS(repoRoot, cfg.External.DLSS); err != nil {
+					return err
+				}
+			}
 		default:
 			return fmt.Errorf("unknown external dependency: %s", name)
 		}
 	}
 
+	return nil
+}
+
+const defaultDLSSVersion = "310.9.16"
+const defaultDLSSBaseURL = "https://raw.githubusercontent.com/NVIDIA/DLSS/v{version}"
+
+// dlssHeaders is the SDK's whole include directory: the helper headers pull each other in,
+// D3D and CUDA variants included, so a Vulkan-only subset does not compile.
+var dlssHeaders = []string{
+	"nvsdk_ngx.h",
+	"nvsdk_ngx_defs.h",
+	"nvsdk_ngx_defs_dlssd.h",
+	"nvsdk_ngx_defs_dlssg.h",
+	"nvsdk_ngx_defs_vk.h",
+	"nvsdk_ngx_helpers.h",
+	"nvsdk_ngx_helpers_cuda.h",
+	"nvsdk_ngx_helpers_d3d.h",
+	"nvsdk_ngx_helpers_dlssd.h",
+	"nvsdk_ngx_helpers_dlssd_cuda.h",
+	"nvsdk_ngx_helpers_dlssd_d3d.h",
+	"nvsdk_ngx_helpers_dlssd_vk.h",
+	"nvsdk_ngx_helpers_dlssg.h",
+	"nvsdk_ngx_helpers_dlssg_d3d.h",
+	"nvsdk_ngx_helpers_dlssg_vk.h",
+	"nvsdk_ngx_helpers_vk.h",
+	"nvsdk_ngx_loader.h",
+	"nvsdk_ngx_params.h",
+	"nvsdk_ngx_params_dlssd.h",
+	"nvsdk_ngx_params_dlssg.h",
+	"nvsdk_ngx_standalone_common.h",
+	"nvsdk_ngx_standalone_cuda.h",
+	"nvsdk_ngx_vk.h",
+}
+
+// dlssFiles lists what the Linux x86_64 build needs from the DLSS SDK, relative to the SDK
+// root: the headers, the NGX loader stub the engine links, and the Super Resolution and Ray
+// Reconstruction model libraries shipped next to the executables. Keep the layout in sync
+// with DLSS_NGX_* in cmake/SetupExternalLibs.cmake.
+func dlssFiles(version string) []string {
+	files := []string{"LICENSE.txt"}
+	for _, header := range dlssHeaders {
+		files = append(files, "include/"+header)
+	}
+	return append(files,
+		"lib/Linux_x86_64/libnvsdk_ngx.a",
+		"lib/Linux_x86_64/rel/libnvidia-ngx-dlss.so."+version,
+		"lib/Linux_x86_64/rel/libnvidia-ngx-dlssd.so."+version,
+	)
+}
+
+func dlssFileURL(baseURL string, version string, file string) string {
+	base := strings.TrimRight(strings.ReplaceAll(baseURL, "{version}", version), "/")
+	return base + "/" + file
+}
+
+func ensureDLSS(repoRoot string, cfg config.DLSSConfig) error {
+	version := cfg.Version
+	if version == "" {
+		version = defaultDLSSVersion
+	}
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = defaultDLSSBaseURL
+	}
+	dstDir := filepath.Join(repoRoot, "external", "dlss-"+version)
+	for _, file := range dlssFiles(version) {
+		dst := filepath.Join(dstDir, filepath.FromSlash(file))
+		if fileExists(dst) {
+			continue
+		}
+		if err := Download(dlssFileURL(baseURL, version, file), dst); err != nil {
+			return fmt.Errorf("DLSS SDK %s: %w", file, err)
+		}
+	}
 	return nil
 }
 

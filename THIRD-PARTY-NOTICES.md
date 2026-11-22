@@ -26,6 +26,7 @@ Font Awesome brand icons are trademarks of their respective owners; see
 | Component | Files | License |
 |---|---|---|
 | NVIDIA DLSS (Super Resolution / Ray Reconstruction / Frame Generation) | `nvngx_dlss.dll`, `nvngx_dlssd.dll`, `nvngx_dlssg.dll` | NVIDIA RTX SDK license — see `bin/nvngx_dlss.license.txt` |
+| NVIDIA DLSS on Linux (Super Resolution / Ray Reconstruction) | `libnvidia-ngx-dlss.so.*`, `libnvidia-ngx-dlssd.so.*`; `libnvsdk_ngx.a` is linked into the executables | NVIDIA RTX SDK license — `LICENSE.txt` of the DLSS SDK (<https://github.com/NVIDIA/DLSS>) |
 | NVIDIA Streamline | `sl.*.dll` | MIT (Streamline SDK) |
 | NVIDIA Image Scaling (NIS) | `sl.nis.dll` | See `bin/nis.license.txt` |
 | NVIDIA Reflex / Low Latency | `sl.reflex.dll`, `NvLowLatencyVk.dll` | See `bin/reflex.license.txt` |

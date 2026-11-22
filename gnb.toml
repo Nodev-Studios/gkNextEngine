@@ -51,6 +51,14 @@ when = "windows"
 version = "2.14.16"
 url = "https://github.com/NVIDIA-RTX/Streamline/releases/download/v2.14.16/streamline-sdk-v2.14.16.zip"
 
+[external.dlss]
+# NVIDIA DLSS (NGX) SDK: DLSS on Linux, where Streamline does not exist. Only the headers and
+# the Linux x86_64 libraries are fetched, file by file, from this tree.
+when = "linux"
+# Keep in sync with GK_DLSS_NGX_VERSION in cmake/SetupExternalLibs.cmake.
+version = "310.9.16"
+base_url = "https://raw.githubusercontent.com/NVIDIA/DLSS/v{version}"
+
 [external.fidelityfx]
 when = "windows"
 version = "1.1.4"
