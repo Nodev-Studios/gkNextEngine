@@ -305,6 +305,8 @@ namespace Modules::NextDotNet
 
         RestoreBaseline();
         ClearUiCanvas();
+        // Queries the game published through Agent.SetQuery die with it, like its other state.
+        engine_.GetAgentQueries().ClearValues();
         GGameContentRoot.clear();
         activeManifest_.reset();
         state_ = EGameSessionState::Idle;

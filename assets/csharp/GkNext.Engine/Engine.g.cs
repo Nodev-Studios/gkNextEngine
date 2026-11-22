@@ -28,6 +28,7 @@ namespace GkNext.Interop
         public delegate* unmanaged<GkStr, void> Engine_RequestLoadScene;
         public delegate* unmanaged<void> Engine_RequestClose;
         public delegate* unmanaged<int> Engine_IsReplayMode;
+        public delegate* unmanaged<GkStr, double, void> Agent_SetQuery;
         public delegate* unmanaged<GkStr, int> Input_IsKeyDown;
         public delegate* unmanaged<GkStr, int> Input_IsKeyPressed;
         public delegate* unmanaged<int, int> Input_IsMouseButtonDown;
@@ -151,7 +152,7 @@ namespace GkNext.Interop
     /// <summary>Number of bindings in the table, checked against the native side.</summary>
     public static class EngineApiInfo
     {
-        public const int EntryCount = 128;
+        public const int EntryCount = 129;
     }
 }
 
@@ -242,6 +243,22 @@ namespace GkNext
         public static bool IsReplayMode()
         {
             return Api.Table->Engine_IsReplayMode() != 0;
+        }
+    }
+
+    public static unsafe class Agent
+    {
+        public static void SetQuery(string name, double value)
+        {
+            var mark = Utf8Arena.Mark();
+            try
+            {
+                Api.Table->Agent_SetQuery(Utf8Arena.Encode(name), value);
+            }
+            finally
+            {
+                Utf8Arena.Release(mark);
+            }
         }
     }
 

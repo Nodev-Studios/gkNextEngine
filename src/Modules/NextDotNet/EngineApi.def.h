@@ -40,6 +40,11 @@ GK_API(Engine, RequestLoadScene,      void,     (GkStr filename))
 GK_API(Engine, RequestClose,          void,     ())
 GK_API(Engine, IsReplayMode,          GkBool,   ())
 
+// --- Agent validation ----------------------------------------------------------------------
+// Publishes a value that agentscripts read as `game.<name>` (pass the name without the prefix).
+// A query the host registered under the same name wins. Values are dropped when the game unloads.
+GK_API(Agent, SetQuery, void, (GkStr name, double value))
+
 // --- Input ---------------------------------------------------------------------------------
 // An empty name means "any": IsKeyDown("") is true while any key is held, and IsKeyPressed("")
 // is true on any key/mouse/gamepad press this frame. Flappy's replay parity depends on this.

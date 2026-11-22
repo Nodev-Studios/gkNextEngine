@@ -271,6 +271,7 @@ public:
         agentControl_ = std::move(service);
     }
     const Runtime::Agent::FAgentQueryRegistry& GetAgentQueries() const { return agentQueries_; }
+    Runtime::Agent::FAgentQueryRegistry& GetAgentQueries() { return agentQueries_; }
 
     void SetSceneContentService(std::unique_ptr<Runtime::Scene::ISceneContentService> service)
     {
