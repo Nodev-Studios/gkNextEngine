@@ -16,7 +16,7 @@
     { "type": "assert", "query": "game.state", "op": "eq", "value": "Idle" },
 
     { "type": "cvar", "name": "game.rebuild", "set": "flappy" },
-    { "type": "wait-until", "query": "game.rebuildStatus", "op": "eq", "value": "rebuilt flappy", "timeoutMs": 120000 },
+    { "type": "wait-until", "query": "game.rebuildStatus", "op": "eq", "value": "rebuilt Flappy (C#)", "timeoutMs": 120000 },
     { "type": "assert", "query": "game.state", "op": "eq", "value": "Idle",
       "comment": "Rebuilding is not playing: the request must not have launched anything." },
 
